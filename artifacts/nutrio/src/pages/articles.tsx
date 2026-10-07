@@ -57,9 +57,9 @@ export function ArticlePage() {
 }
 
 export function NewsletterPage() {
-  useSeo('Newsletter interest', 'Tell Nutrio you would like to hear about new articles and updates. Open to members and guests.');
+  useSeo('Nutrio newsletter', 'Get a one-time welcome email with practical meal tips and Nutrio article highlights. Open to members and guests.');
   return <div className="page-wrap grid gap-10 py-11 md:grid-cols-[1fr_1fr] md:py-16">
-    <div><div className="eyebrow">Updates</div><h1 className="font-display mt-3 text-4xl font-extrabold tracking-[-.065em] text-[#20352c] sm:text-5xl">Want to hear when new things land?</h1><p className="mt-4 max-w-md text-sm leading-7 text-[#68766b]">Leave your email to register interest. We are collecting interest only and no newsletter is being sent yet. Please submit only your own email address.</p></div>
+    <div><div className="eyebrow">Eat Smart. Live Better.</div><h1 className="font-display mt-3 text-4xl font-extrabold tracking-[-.065em] text-[#20352c] sm:text-5xl">A useful start to your Nutrio journey.</h1><p className="mt-4 max-w-md text-sm leading-7 text-[#68766b]">Sign up for a real, one-time welcome newsletter with simple meal tips, breakfast ideas and highlights from our healthy-living articles. Please submit only your own email address.</p></div>
     <div className="rounded-[26px] border border-[#e0e3d8] bg-[#fbfaf6] p-6 md:p-8"><NewsletterSignup/></div>
   </div>;
 }

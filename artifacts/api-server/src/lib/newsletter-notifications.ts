@@ -1,118 +1,77 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
 import { db, newsletterSignupsTable as signups } from "@workspace/db";
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { deliverNewsletterEmail, welcomeContent } from "./newsletter-email";
 
 const MAX_ATTEMPTS = 8;
 const LEASE_MS = 120_000;
-type Signup = typeof signups.$inferSelect;
+const PENDING = ["pending", "preparing", "sending", "failed", "uncertain"];
+const fields = {
+  owner: { status: "notificationStatus", attempts: "notificationAttempts", next: "nextAttemptAt",
+    lease: "leaseAt", message: "gmailMessageId", error: "lastError" },
+  welcome: { status: "welcomeStatus", attempts: "welcomeAttempts", next: "welcomeNextAttemptAt",
+    lease: "welcomeLeaseAt", message: "welcomeGmailMessageId", error: "welcomeLastError" },
+} as const;
+type Mode = keyof typeof fields;
 
-// Use a durable outbox. A lost Gmail send acknowledgement is ambiguous: reconcile
-// by our stable RFC Message-ID and never blindly resend it.
-export async function notifyNewsletterSignup(id: number): Promise<void> {
+export function notifyNewsletterSignup(id: number) { return sendSignupEmail(id, "owner"); }
+export function sendWelcomeNewsletter(id: number) { return sendSignupEmail(id, "welcome"); }
+
+async function sendSignupEmail(id: number, mode: Mode): Promise<void> {
+  const f = fields[mode];
   const now = new Date();
   const row = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(signups).where(eq(signups.id, id))
       .for("update", { skipLocked: true });
-    if (!current || current.notificationStatus === "sent" ||
-        current.notificationAttempts >= MAX_ATTEMPTS || current.nextAttemptAt > now ||
-        (current.leaseAt && now.getTime() - current.leaseAt.getTime() < LEASE_MS)) return null;
-    const uncertain = ["sending", "uncertain"].includes(current.notificationStatus);
+    const lease = current?.[f.lease];
+    if (!current || !PENDING.includes(current[f.status]) || current[f.attempts] >= MAX_ATTEMPTS ||
+        current[f.next] > now || (lease && now.getTime() - lease.getTime() < LEASE_MS)) return null;
+    const uncertain = ["sending", "uncertain"].includes(current[f.status]);
     const [claimed] = await tx.update(signups).set({
-      leaseAt: now,
-      notificationStatus: uncertain ? "uncertain" : "preparing",
-      notificationAttempts: current.notificationAttempts + 1,
+      [f.lease]: now, [f.status]: uncertain ? "uncertain" : "preparing",
+      [f.attempts]: current[f.attempts] + 1,
     }).where(eq(signups.id, id)).returning();
     return claimed;
   });
   if (!row) return;
-
-  let sendStarted = row.notificationStatus === "uncertain";
-  const ownedLease = and(eq(signups.id, id), eq(signups.leaseAt, now));
+  let sendStarted = row[f.status] === "uncertain";
+  const lease = and(eq(signups.id, id), eq(signups[f.lease], now));
   try {
-    const recipient = process.env.NEWSLETTER_NOTIFICATION_EMAIL?.trim();
-    if (!recipient || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(recipient)) {
-      throw new Error("Newsletter notification recipient is not configured");
-    }
-    const gmailFetch = new ReplitConnectors().createProxyFetch("google-mail");
-    const messageId = `newsletter.${row.deliveryKey}@nutrio.local`;
-    const search = new URLSearchParams({ q: `in:sent rfc822msgid:${messageId}`, maxResults: "1" });
-    const found = await gmailFetch(`/gmail/v1/users/me/messages?${search}`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!found.ok) throw new Error(`Gmail notification lookup rejected (${found.status})`);
-    const existing = await found.json() as { messages?: { id: string }[] };
-    if (existing.messages?.[0]?.id) {
-      await recordSent(ownedLease, existing.messages[0].id);
-      return;
-    }
-    if (sendStarted) {
-      throw new Error("Send acknowledgement uncertain; only checking Sent mail, not resending");
-    }
-
-    const profileResponse = await gmailFetch("/gmail/v1/users/me/profile", {
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!profileResponse.ok) throw new Error(`Gmail sender lookup rejected (${profileResponse.status})`);
-    const profile = await profileResponse.json() as { emailAddress?: string };
-    if (!profile.emailAddress || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(profile.emailAddress)) {
-      throw new Error("Connected Gmail has no valid sender address");
-    }
-    // Only server configuration selects the recipient; submitted email is body text only.
+    // Subscriber addresses cannot control the owner alert recipient.
+    const recipient = mode === "welcome" ? row.email : process.env.NEWSLETTER_NOTIFICATION_EMAIL?.trim();
+    if (!recipient) throw new Error("Newsletter notification recipient is not configured");
     const preview = process.env.NODE_ENV !== "production";
-    const raw = [
-      `From: Nutrio <${profile.emailAddress}>`,
-      `To: ${recipient}`,
-      `Subject: ${preview ? "[TEST/PREVIEW] " : ""}Nutrio: New newsletter signup`,
-      `Message-ID: <${messageId}>`,
-      `Date: ${row.consentAt.toUTCString()}`,
-      "MIME-Version: 1.0",
-      "Content-Type: text/plain; charset=UTF-8",
-      "",
+    const messageId = `${mode === "welcome" ? "welcome" : "newsletter"}.${row.deliveryKey}@nutrio.local`;
+    const text = mode === "welcome" ? welcomeContent() : [
       ...(preview ? ["This notification is from the Nutrio development preview.", ""] : []),
-      "A new newsletter signup has been saved.",
-      `Subscriber email: ${row.email}`,
+      "A new newsletter signup has been saved.", `Subscriber email: ${row.email}`,
       `Signed up: ${row.consentAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`,
-      `Signup reference: NL-${row.id}`,
-      "The signup form recorded explicit consent to Nutrio updates.",
-      "",
-      "Email ownership has not been verified. No marketing campaign has been sent.",
+      `Signup reference: NL-${row.id}`, "The signup form recorded explicit consent.",
+      "", "Email ownership has not been verified. A separate one-time welcome delivery is tracked for this signup.",
     ].join("\r\n");
-    const [stillOwned] = await db.update(signups).set({ notificationStatus: "sending" })
-      .where(ownedLease).returning({ id: signups.id });
-    if (!stillOwned) return;
-    sendStarted = true;
-    const sent = await gmailFetch("/gmail/v1/users/me/messages/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ raw: Buffer.from(raw, "utf8").toString("base64url") }),
-      signal: AbortSignal.timeout(10_000),
+    const gmailFetch = new ReplitConnectors().createProxyFetch("google-mail");
+    const message = await deliverNewsletterEmail({
+      gmailFetch, messageId, recipient, date: row.consentAt,
+      subject: `${preview ? "[TEST/PREVIEW] " : ""}${mode === "welcome" ? "Welcome to Nutrio - Eat Smart. Live Better." : "Nutrio: New newsletter signup"}`,
+      text, uncertain: sendStarted, markSendStarted: (value) => { sendStarted = value; },
+      beforeSend: async () => {
+        const [owned] = await db.update(signups).set({ [f.status]: "sending" }).where(lease).returning({ id: signups.id });
+        return Boolean(owned);
+      },
     });
-    if (!sent.ok) {
-      // Explicit 4xx rejection is safe to retry; server/network failures may have sent.
-      if (sent.status >= 400 && sent.status < 500) sendStarted = false;
-      throw new Error(`Gmail notification send rejected (${sent.status})`);
-    }
-    const result = await sent.json() as { id?: string };
-    if (!result.id) throw new Error("Gmail send returned no acknowledgement");
-    await recordSent(ownedLease, result.id);
+    if (message) await db.update(signups).set({
+      [f.status]: "sent", [f.message]: message, [f.lease]: null, [f.error]: null,
+    }).where(lease);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Newsletter notification failed";
+    const reason = error instanceof Error ? error.message : "Newsletter email failed";
     await db.update(signups).set({
-      notificationStatus: sendStarted ? "uncertain" : "failed",
-      leaseAt: null,
-      lastError: message,
-      nextAttemptAt: new Date(Date.now() + Math.min(600_000, 30_000 * 2 ** (row.notificationAttempts - 1))),
-    }).where(ownedLease);
-    logger.warn({ signupId: id, notificationStatus: sendStarted ? "uncertain" : "failed",
-      attempt: row.notificationAttempts, reason: message }, "Newsletter signup saved but notification needs attention");
+      [f.status]: sendStarted ? "uncertain" : "failed", [f.lease]: null, [f.error]: reason,
+      [f.next]: new Date(Date.now() + Math.min(600_000, 30_000 * 2 ** (row[f.attempts] - 1))),
+    }).where(lease);
+    logger.warn({ signupId: id, delivery: mode, attempt: row[f.attempts], reason },
+      "Newsletter signup saved but email delivery needs attention");
   }
-}
-
-async function recordSent(lease: ReturnType<typeof and>, gmailMessageId: string) {
-  await db.update(signups).set({
-    notificationStatus: "sent", gmailMessageId, leaseAt: null, lastError: null,
-  }).where(lease);
 }
 
 let draining = false;
@@ -121,19 +80,19 @@ export function startNewsletterNotificationWorker() {
     if (draining) return;
     draining = true;
     try {
-      const pending = await db.select({ id: signups.id }).from(signups).where(and(
-        inArray(signups.notificationStatus, ["pending", "preparing", "sending", "failed", "uncertain"]),
-        lte(signups.nextAttemptAt, new Date()),
-        sql`${signups.notificationAttempts} < ${MAX_ATTEMPTS}`,
+      const pending = await db.select({ id: signups.id }).from(signups).where(or(
+        and(inArray(signups.notificationStatus, PENDING), lte(signups.nextAttemptAt, new Date()), sql`${signups.notificationAttempts} < ${MAX_ATTEMPTS}`),
+        and(inArray(signups.welcomeStatus, PENDING), lte(signups.welcomeNextAttemptAt, new Date()), sql`${signups.welcomeAttempts} < ${MAX_ATTEMPTS}`),
       )).orderBy(signups.id).limit(10);
-      for (const row of pending) await notifyNewsletterSignup(row.id);
+      // Separate leases, statuses and Message-IDs protect both delivery channels.
+      for (const row of pending) {
+        await notifyNewsletterSignup(row.id);
+        await sendWelcomeNewsletter(row.id);
+      }
     } catch {
-      logger.warn("Newsletter notification worker could not reconcile pending signups");
-    } finally {
-      draining = false;
-    }
+      logger.warn("Newsletter worker could not reconcile pending emails");
+    } finally { draining = false; }
   };
   void drain();
-  const timer = setInterval(() => void drain(), 45_000);
-  timer.unref();
+  setInterval(() => void drain(), 45_000).unref();
 }

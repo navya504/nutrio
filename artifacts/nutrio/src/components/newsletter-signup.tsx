@@ -31,13 +31,13 @@ export function NewsletterSignup() {
       <Controller control={control} name="consent" rules={{ validate: (x) => x || 'Please tick the box to continue.' }} render={({ field }) =>
         <label className="flex items-start gap-3 text-[13px] leading-5 text-[#55655a]">
           <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} disabled={mutation.isPending} data-testid="checkbox-newsletter-consent" className="mt-0.5 h-4 w-4 accent-[#315f43]"/>
-          <span>I agree that Nutrio may keep this email address to note my interest in updates.</span>
+          <span>I agree that Nutrio may save my email address and send me a one-time welcome newsletter with meal tips and article highlights.</span>
         </label>}/>
       {errors.consent && <p className="mt-1.5 text-xs text-[#a03b2c]" role="alert">{errors.consent.message}</p>}
     </div>
-    <button type="submit" disabled={mutation.isPending} className="btn-primary justify-self-start disabled:opacity-60" data-testid="button-newsletter-submit">{mutation.isPending ? 'Saving...' : failed ? 'Try again' : 'Note my interest'}</button>
-    {failed && <p className="rounded-xl bg-[#f6e3de] p-3 text-sm text-[#8a3326]" role="alert" data-testid="text-newsletter-error">We could not save your interest just now. Your email is still here, so you can try again.</p>}
+    <button type="submit" disabled={mutation.isPending} className="btn-primary justify-self-start disabled:opacity-60" data-testid="button-newsletter-submit">{mutation.isPending ? 'Signing up...' : failed ? 'Try again' : 'Send my welcome newsletter'}</button>
+    {failed && <p className="rounded-xl bg-[#f6e3de] p-3 text-sm text-[#8a3326]" role="alert" data-testid="text-newsletter-error">We could not save your signup just now. Your email is still here, so you can try again.</p>}
     {done && <p className="flex items-start gap-2 rounded-xl bg-[#dce8c8] p-3 text-sm text-[#2a4433]" role="status" data-testid="text-newsletter-success"><Check size={16} className="mt-0.5 shrink-0"/>{done}</p>}
-    <p className="text-[11px] leading-5 text-[#7a877c]">We are only collecting interest for now. No newsletter is being sent yet. Only submit your own email address.</p>
+    <p className="text-[11px] leading-5 text-[#7a877c]">One welcome email per new subscriber; no recurring campaign is enabled. Delivery may take a little time. Check your inbox and spam folder, and only submit your own email address.</p>
   </form>;
 }

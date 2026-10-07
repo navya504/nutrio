@@ -2,6 +2,8 @@
 
 A nutrition and healthy-food web app with recipes, meal planning, member–staff enquiries, an AI assistant, community challenges, articles and newsletter signup.
 
+New consented newsletter subscribers receive a one-time welcome email with practical meal tips and article highlights through connected Gmail. Owner signup alerts are tracked separately. Existing subscribers are not automatically emailed, and no recurring campaign is enabled. Email format validation does not verify mailbox ownership or guarantee delivery.
+
 ## Stack
 
 React + Vite, Express, TypeScript, PostgreSQL + Drizzle, Clerk authentication and a pnpm workspace.

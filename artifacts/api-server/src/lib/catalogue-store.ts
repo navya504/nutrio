@@ -23,6 +23,12 @@ export async function initializeCatalogue() {
       ALTER TABLE nutrio_gym_partnerships ADD COLUMN IF NOT EXISTS staff_note text NOT NULL DEFAULT '';
       ALTER TABLE nutrio_contact_messages ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'received';
       ALTER TABLE nutrio_contact_messages ADD COLUMN IF NOT EXISTS staff_note text NOT NULL DEFAULT '';
+      ALTER TABLE nutrio_newsletter_signups ADD COLUMN IF NOT EXISTS welcome_status text NOT NULL DEFAULT 'inactive';
+      ALTER TABLE nutrio_newsletter_signups ADD COLUMN IF NOT EXISTS welcome_attempts integer NOT NULL DEFAULT 0;
+      ALTER TABLE nutrio_newsletter_signups ADD COLUMN IF NOT EXISTS welcome_next_attempt_at timestamptz NOT NULL DEFAULT now();
+      ALTER TABLE nutrio_newsletter_signups ADD COLUMN IF NOT EXISTS welcome_lease_at timestamptz;
+      ALTER TABLE nutrio_newsletter_signups ADD COLUMN IF NOT EXISTS welcome_gmail_message_id text;
+      ALTER TABLE nutrio_newsletter_signups ADD COLUMN IF NOT EXISTS welcome_last_error text;
     `);
     for (const [kind, entries] of [["food", foods], ["recipe", recipes], ["gym", gyms]] as const) {
       for (const entry of entries) {

@@ -3,10 +3,10 @@ import { CreateNewsletterSignupBody } from "@workspace/api-zod";
 import { db, newsletterSignupsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { articles } from "../lib/articles";
-import { notifyNewsletterSignup } from "../lib/newsletter-notifications";
+import { notifyNewsletterSignup, sendWelcomeNewsletter } from "../lib/newsletter-notifications";
 
 const router = Router();
-const success = { message: "Thanks! Your interest in Nutrio updates has been recorded." };
+const success = { message: "Thanks! Your signup is recorded. For a first-time signup, look out for your one-time Nutrio welcome email in your inbox or spam folder." };
 const recent = new Map<string, { count: number; until: number }>();
 
 router.get("/articles", (_req, res) => res.json(articles));
@@ -40,11 +40,11 @@ router.post("/newsletter/signups", async (req, res) => {
   limit.count += 1;
   recent.set(key, limit);
   try {
-    const [created] = await db.insert(newsletterSignupsTable).values({ email: body.data.email })
+    const [created] = await db.insert(newsletterSignupsTable).values({ email: body.data.email, welcomeStatus: "pending" })
       .onConflictDoNothing({ target: newsletterSignupsTable.email }).returning({ id: newsletterSignupsTable.id });
     if (created) {
       // Save first. Email failure never discards a signup or falsely reports delivery.
-      try { await notifyNewsletterSignup(created.id); }
+      try { await Promise.all([notifyNewsletterSignup(created.id), sendWelcomeNewsletter(created.id)]); }
       catch { req.log.warn({ signupId: created.id }, "Newsletter notification will be reconciled by worker"); }
     }
     return res.json(success);
