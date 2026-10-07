@@ -1,0 +1,1041 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Nutrio food discovery and enquiry API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: catalog
+    description: Foods, recipes, and partner gyms
+  - name: enquiries
+    description: Customer orders and business enquiries
+paths:
+  /openai/assistant:
+    get:
+      operationId: getAssistantHistory
+      responses:
+        "200":
+          description: Private saved chat and remaining daily allowance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantHistory" }
+        "401": { description: Sign in required }
+    delete:
+      operationId: deleteAssistantHistory
+      responses:
+        "204": { description: Saved chat removed; daily usage allowance is not reset }
+        "401": { description: Sign in required }
+        "409": { description: Wait for the current reply before clearing }
+  /openai/assistant/messages:
+    post:
+      operationId: sendAssistantMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssistantInput" }
+      responses:
+        "200":
+          description: Saved reply, or the state of an existing request
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AssistantTurn" }
+        "400": { description: Invalid question }
+        "401": { description: Sign in required }
+        "409": { description: Another question is being answered or retry ID conflicts }
+        "429": { description: Daily AI allowance reached }
+        "503": { description: Assistant unavailable; question preserved for retry }
+  /challenges:
+    get:
+      operationId: getChallenges
+      responses:
+        "200":
+          description: Available habit challenges with anonymous real community totals
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Challenge" }
+  /member/challenges:
+    get:
+      operationId: getMemberChallenges
+      responses:
+        "200":
+          description: Own joined and previously left challenges
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ChallengeProgress" }
+        "401": { description: Sign in required }
+  /member/challenges/{slug}/membership:
+    put:
+      operationId: setChallengeMembership
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChallengeMembershipInput" }
+      responses:
+        "200":
+          description: Joined, resumed or left; existing progress retained
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChallengeProgress" }
+        "401": { description: Sign in required }
+        "404": { description: Challenge or membership not found }
+  /member/challenges/{slug}/check-in:
+    put:
+      operationId: setChallengeCheckin
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChallengeCheckinInput" }
+      responses:
+        "200":
+          description: Today's check-in or undo saved; repeated requests are idempotent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChallengeProgress" }
+        "401": { description: Sign in required }
+        "404": { description: Membership not found }
+        "409": { description: Join an active challenge within its window first }
+  /articles:
+    get:
+      operationId: getArticles
+      responses:
+        "200":
+          description: Published educational articles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Article" }
+  /articles/{slug}:
+    get:
+      operationId: getArticle
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: A published article
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Article" }
+        "404":
+          description: Article not found
+  /newsletter/signups:
+    post:
+      operationId: createNewsletterSignup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsletterSignupInput"
+      responses:
+        "200":
+          description: Signup recorded, including duplicate-safe submissions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message: { type: string }
+        "400":
+          description: Valid email and explicit consent are required
+        "429":
+          description: Too many requests; retry later
+        "503":
+          description: Signup could not be saved; retry later
+  /member/catalogue:
+    get:
+      operationId: getMemberCatalogue
+      responses:
+        "200":
+          description: Catalogue including unavailable historical references
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberCatalogue" }
+  /admin/access:
+    get:
+      operationId: getStaffAccess
+      responses:
+        "200":
+          description: Authorized staff
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffAccess" }
+  /admin/catalogue:
+    get:
+      operationId: getStaffCatalogue
+      responses:
+        "200":
+          description: All listings including unavailable entries
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Listing" } }
+    post:
+      operationId: createStaffListing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ListingInput" }
+      responses:
+        "201":
+          description: Created listing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Listing" }
+  /admin/catalogue/{kind}/{key}:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [food, recipe, gym] } }
+      - { name: key, in: path, required: true, schema: { type: string } }
+    put:
+      operationId: updateStaffListing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ListingInput" }
+      responses:
+        "200":
+          description: Updated listing
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Listing" }
+  /admin/enquiries:
+    get:
+      operationId: getStaffEnquiries
+      responses:
+        "200":
+          description: Incoming enquiries
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/StaffEnquiry" } }
+  /admin/enquiries/{kind}/{id}:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [order, partnership, contact] } }
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    patch:
+      operationId: updateStaffEnquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquiryUpdate" }
+      responses:
+        "200":
+          description: Updated enquiry
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffEnquiry" }
+  /member/profile:
+    get:
+      operationId: getMemberProfile
+      responses:
+        "200":
+          description: Member profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberProfile" }
+        "401": { description: Sign in required }
+    put:
+      operationId: saveMemberProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MemberProfile" }
+      responses:
+        "200":
+          description: Saved profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberProfile" }
+        "400": { description: Invalid profile }
+        "401": { description: Sign in required }
+  /member/favourites:
+    get:
+      operationId: getMemberFavourites
+      responses:
+        "200":
+          description: Saved recipes and favourite foods
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MemberFavourite" }
+        "401": { description: Sign in required }
+    put:
+      operationId: setMemberFavourite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FavouriteInput" }
+      responses:
+        "200":
+          description: Updated favourites
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MemberFavourite" }
+        "400": { description: Invalid favourite }
+        "401": { description: Sign in required }
+  /member/plans:
+    get:
+      operationId: getMemberPlans
+      responses:
+        "200":
+          description: Saved daily and weekly plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MealPlan" }
+        "401": { description: Sign in required }
+    post:
+      operationId: createMemberPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MealPlanInput" }
+      responses:
+        "201":
+          description: Saved plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MealPlan" }
+        "400": { description: Invalid plan }
+        "401": { description: Sign in required }
+  /member/plans/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    put:
+      operationId: updateMemberPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MealPlanInput" }
+      responses:
+        "200":
+          description: Updated plan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MealPlan" }
+        "400": { description: Invalid plan }
+        "401": { description: Sign in required }
+        "404": { description: Plan not found }
+    delete:
+      operationId: deleteMemberPlan
+      responses:
+        "204": { description: Plan deleted }
+        "400": { description: Invalid plan identifier }
+        "401": { description: Sign in required }
+        "404": { description: Plan not found }
+  /member/enquiries:
+    get:
+      operationId: getMemberEnquiries
+      responses:
+        "200":
+          description: Personal order enquiries, not confirmed orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MemberEnquiry" }
+        "401": { description: Sign in required }
+  /member/enquiries/{kind}/{id}/conversation:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [order, partnership, contact] } }
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      operationId: getMemberEnquiryConversation
+      responses:
+        "200":
+          description: Owned enquiry conversation without internal staff notes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnquiryConversation" }
+        "401": { description: Sign in required }
+        "404": { description: Enquiry not found }
+    post:
+      operationId: sendMemberEnquiryMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquiryMessageInput" }
+      responses:
+        "201":
+          description: Saved reply
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnquiryMessage" }
+        "400": { description: Invalid reply }
+        "401": { description: Sign in required }
+        "404": { description: Enquiry not found }
+        "409": { description: Conflicting retry identifier }
+  /member/enquiries/{kind}/{id}/read:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [order, partnership, contact] } }
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post:
+      operationId: markMemberEnquiryRead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquiryReadInput" }
+      responses:
+        "200":
+          description: Read marker saved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnquiryReadReceipt" }
+        "400": { description: Invalid read marker }
+        "401": { description: Sign in required }
+        "404": { description: Enquiry not found }
+  /admin/enquiries/{kind}/{id}/conversation:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [order, partnership, contact] } }
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    get:
+      operationId: getStaffEnquiryConversation
+      responses:
+        "200":
+          description: Enquiry conversation for authorized staff
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnquiryConversation" }
+        "401": { description: Sign in required }
+        "403": { description: Staff access required }
+        "404": { description: Enquiry not found }
+    post:
+      operationId: sendStaffEnquiryMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquiryMessageInput" }
+      responses:
+        "201":
+          description: Saved member-visible reply
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnquiryMessage" }
+        "400": { description: Invalid reply }
+        "401": { description: Sign in required }
+        "403": { description: Staff access required }
+        "404": { description: Enquiry not found }
+        "409": { description: Guest enquiry has no member conversation or conflicting retry identifier }
+  /admin/enquiries/{kind}/{id}/read:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [order, partnership, contact] } }
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    post:
+      operationId: markStaffEnquiryRead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnquiryReadInput" }
+      responses:
+        "200":
+          description: Read marker saved for this staff account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnquiryReadReceipt" }
+        "400": { description: Invalid read marker }
+        "401": { description: Sign in required }
+        "403": { description: Staff access required }
+        "404": { description: Enquiry not found }
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /foods:
+    get:
+      operationId: getFoods
+      tags: [catalog]
+      summary: List Nutrio foods
+      responses:
+        "200":
+          description: Food catalogue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Food"
+  /foods/{slug}:
+    get:
+      operationId: getFood
+      tags: [catalog]
+      summary: Get a food item
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Food detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Food"
+        "404":
+          description: Food not found
+  /recipes:
+    get:
+      operationId: getRecipes
+      tags: [catalog]
+      summary: List recipes
+      responses:
+        "200":
+          description: Recipe catalogue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recipe"
+  /recipes/{slug}:
+    get:
+      operationId: getRecipe
+      tags: [catalog]
+      summary: Get a recipe
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Recipe detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recipe"
+        "404":
+          description: Recipe not found
+  /gyms:
+    get:
+      operationId: getGyms
+      tags: [catalog]
+      summary: Search Nutrio gym partners
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching gyms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Gym"
+  /food-orders:
+    post:
+      operationId: createFoodOrder
+      tags: [enquiries]
+      summary: Submit a pickup order enquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FoodOrderInput"
+      responses:
+        "201":
+          description: Order enquiry received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderReceipt"
+        "400":
+          description: Invalid order
+  /gym-partnerships:
+    post:
+      operationId: createGymPartnership
+      tags: [enquiries]
+      summary: Submit a gym partnership enquiry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GymPartnershipInput"
+      responses:
+        "201":
+          description: Partnership enquiry received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnquiryReceipt"
+        "400":
+          description: Invalid enquiry
+  /contact-messages:
+    post:
+      operationId: createContactMessage
+      tags: [enquiries]
+      summary: Submit a contact message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactMessageInput"
+      responses:
+        "201":
+          description: Contact message received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnquiryReceipt"
+        "400":
+          description: Invalid message
+components:
+  schemas:
+    AssistantInput:
+      type: object
+      required: [text, requestId, useProfile]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 2000 }
+        requestId: { type: string, format: uuid }
+        useProfile: { type: boolean }
+    AssistantTurn:
+      type: object
+      required: [id, requestId, userText, useProfile, reply, status, error, createdAt]
+      properties:
+        id: { type: integer }
+        requestId: { type: string, format: uuid }
+        userText: { type: string }
+        useProfile: { type: boolean }
+        reply: { type: [string, "null"] }
+        status: { type: string, enum: [pending, complete, failed] }
+        error: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    AssistantHistory:
+      type: object
+      required: [turns, dailyRemaining]
+      properties:
+        turns:
+          type: array
+          items: { $ref: "#/components/schemas/AssistantTurn" }
+        dailyRemaining: { type: integer }
+    ChallengeMembershipInput:
+      type: object
+      required: [joined]
+      properties:
+        joined: { type: boolean }
+    ChallengeCheckinInput:
+      type: object
+      required: [completed]
+      properties:
+        completed: { type: boolean }
+    Challenge:
+      type: object
+      required: [slug, title, description, durationDays, dailyAction, safetyNote, participantCount, checkinCount]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        description: { type: string }
+        durationDays: { type: integer }
+        dailyAction: { type: string }
+        safetyNote: { type: string }
+        participantCount: { type: integer }
+        checkinCount: { type: integer }
+    ChallengeProgress:
+      type: object
+      required: [challengeSlug, isActive, startDate, endDate, checkedDates, completedDays, streak, todayDone, canCheckIn, dayNumber, isFinished]
+      properties:
+        challengeSlug: { type: string }
+        isActive: { type: boolean }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        checkedDates:
+          type: array
+          items: { type: string, format: date }
+        completedDays: { type: integer }
+        streak: { type: integer }
+        todayDone: { type: boolean }
+        canCheckIn: { type: boolean }
+        dayNumber: { type: integer }
+        isFinished: { type: boolean }
+    NewsletterSignupInput:
+      type: object
+      required: [email, consent]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        consent: { type: boolean, enum: [true] }
+        website: { type: string, maxLength: 200, description: Anti-spam field; leave empty }
+    Article:
+      type: object
+      required: [slug, title, category, summary, readMinutes, sections]
+      properties:
+        slug: { type: string }
+        title: { type: string }
+        category: { type: string }
+        summary: { type: string }
+        readMinutes: { type: integer }
+        sections:
+          type: array
+          items:
+            type: object
+            required: [heading, paragraphs]
+            properties:
+              heading: { type: string }
+              paragraphs:
+                type: array
+                items: { type: string }
+    MemberCatalogue:
+      type: object
+      required: [foods, recipes]
+      properties:
+        foods: { type: array, items: { $ref: "#/components/schemas/Food" } }
+        recipes: { type: array, items: { $ref: "#/components/schemas/Recipe" } }
+    StaffAccess:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [admin, staff] }
+    ListingInput:
+      type: object
+      required: [kind, key, available, operatorSupplied, verified, verificationNote]
+      properties:
+        kind: { type: string, enum: [food, recipe, gym] }
+        key: { type: string, pattern: "^[a-z0-9-]{1,100}$" }
+        available: { type: boolean }
+        operatorSupplied: { type: boolean }
+        verified: { type: boolean }
+        verificationNote: { type: string, maxLength: 1000 }
+        food: { $ref: "#/components/schemas/Food" }
+        recipe: { $ref: "#/components/schemas/Recipe" }
+        gym: { $ref: "#/components/schemas/Gym" }
+    Listing:
+      allOf:
+        - { $ref: "#/components/schemas/ListingInput" }
+        - type: object
+          required: [updatedAt]
+          properties:
+            updatedAt: { type: string }
+    EnquiryUpdate:
+      type: object
+      required: [status, staffNote]
+      properties:
+        status: { type: string, enum: [received, reviewing, confirmed, fulfilled, declined, closed] }
+        staffNote: { type: string, maxLength: 2000 }
+    StaffEnquiry:
+      type: object
+      required: [id, kind, reference, name, email, phone, subject, detail, status, staffNote, createdAt, unreadCount, memberCanReply]
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [order, partnership, contact] }
+        reference: { type: string }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        subject: { type: string }
+        detail: { type: string }
+        status: { type: string, enum: [received, reviewing, confirmed, fulfilled, declined, closed] }
+        staffNote: { type: string }
+        createdAt: { type: string }
+        unreadCount: { type: integer, minimum: 0 }
+        memberCanReply: { type: boolean }
+    MemberProfile:
+      type: object
+      required: [displayName, goal, dietaryPreference, dailyCalories, dailyProteinG]
+      properties:
+        displayName: { type: string, maxLength: 120 }
+        goal: { type: string, enum: [healthy, lose, muscle, energy, workout, office] }
+        dietaryPreference: { type: string, enum: [any, vegetarian] }
+        dailyCalories: { type: integer, minimum: 500, maximum: 10000 }
+        dailyProteinG: { type: integer, minimum: 0, maximum: 500 }
+    MemberFavourite:
+      type: object
+      required: [kind, slug]
+      properties:
+        kind: { type: string, enum: [food, recipe] }
+        slug: { type: string, minLength: 1, maxLength: 150 }
+    FavouriteInput:
+      type: object
+      required: [kind, slug, saved]
+      properties:
+        kind: { type: string, enum: [food, recipe] }
+        slug: { type: string, minLength: 1, maxLength: 150 }
+        saved: { type: boolean }
+    MealEntry:
+      type: object
+      required: [day, meal, kind, slug, servings]
+      properties:
+        day: { type: integer, minimum: 0, maximum: 6 }
+        meal: { type: string, enum: [breakfast, lunch, dinner, snack] }
+        kind: { type: string, enum: [food, recipe] }
+        slug: { type: string, minLength: 1, maxLength: 150 }
+        servings: { type: number, minimum: 0.25, maximum: 20 }
+    MealPlanInput:
+      type: object
+      required: [name, days, entries]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        days: { type: integer, enum: [1, 7] }
+        entries:
+          type: array
+          maxItems: 200
+          items: { $ref: "#/components/schemas/MealEntry" }
+    NutritionTotals:
+      type: object
+      required: [calories, proteinG, carbsG, fatG, fiberG, costInRupees]
+      properties:
+        calories: { type: number }
+        proteinG: { type: number }
+        carbsG: { type: number }
+        fatG: { type: number }
+        fiberG: { type: number }
+        costInRupees: { type: number }
+    MealPlan:
+      type: object
+      required: [id, name, days, entries, totals, dailyTotals, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        days: { type: integer, enum: [1, 7] }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/MealEntry" }
+        totals: { $ref: "#/components/schemas/NutritionTotals" }
+        dailyTotals:
+          type: array
+          items: { $ref: "#/components/schemas/NutritionTotals" }
+        updatedAt: { type: string, format: date-time }
+    MemberEnquiry:
+      type: object
+      required: [id, kind, enquiryId, subject, detail, status, submittedAt, unreadCount]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [order, partnership, contact] }
+        enquiryId: { type: integer, minimum: 1 }
+        subject: { type: string }
+        detail: { type: string }
+        unreadCount: { type: integer, minimum: 0 }
+        status: { type: string }
+        submittedAt: { type: string, format: date-time }
+        totalInRupees: { type: integer }
+        itemCount: { type: integer }
+        pickupLocation: { type: string }
+        pickupTime: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FoodOrderItemInput" }
+    EnquiryMessage:
+      type: object
+      required: [id, authorRole, body, createdAt]
+      properties:
+        id: { type: integer, minimum: 1 }
+        authorRole: { type: string, enum: [member, staff] }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    EnquiryMessageInput:
+      type: object
+      required: [body, clientMessageId]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 3000 }
+        clientMessageId: { type: string, format: uuid }
+    EnquiryConversation:
+      type: object
+      required: [kind, enquiryId, reference, subject, detail, status, memberCanReply, messages, latestMessageId, unreadCount]
+      properties:
+        kind: { type: string, enum: [order, partnership, contact] }
+        enquiryId: { type: integer, minimum: 1 }
+        reference: { type: string }
+        subject: { type: string }
+        detail: { type: string }
+        status: { type: string }
+        memberCanReply: { type: boolean }
+        messages: { type: array, items: { $ref: "#/components/schemas/EnquiryMessage" } }
+        latestMessageId: { type: integer, minimum: 0 }
+        unreadCount: { type: integer, minimum: 0 }
+    EnquiryReadInput:
+      type: object
+      required: [lastSeenMessageId]
+      properties:
+        lastSeenMessageId: { type: integer, minimum: 0 }
+    EnquiryReadReceipt:
+      type: object
+      required: [lastReadMessageId]
+      properties:
+        lastReadMessageId: { type: integer, minimum: 0 }
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+    Food:
+      type: object
+      required: [slug, name, description, category, priceInRupees, calories, proteinG, carbsG, fatG, fiberG, portion, prepMinutes, ingredients, allergens, tags, imageUrl, vegetarian, bestFor]
+      properties:
+        demonstration: { type: boolean }
+        available: { type: boolean }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        priceInRupees: { type: integer }
+        calories: { type: integer }
+        proteinG: { type: integer }
+        carbsG: { type: integer }
+        fatG: { type: integer }
+        fiberG: { type: integer }
+        portion: { type: string }
+        prepMinutes: { type: integer }
+        ingredients: { type: array, items: { type: string } }
+        allergens: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        imageUrl: { type: string }
+        vegetarian: { type: boolean }
+        bestFor: { type: array, items: { type: string } }
+    RecipeIngredient:
+      type: object
+      required: [name, quantity]
+      properties:
+        name: { type: string }
+        quantity: { type: string }
+    Recipe:
+      type: object
+      required: [slug, name, description, category, calories, proteinG, carbsG, fatG, fiberG, prepMinutes, difficulty, costInRupees, vegetarian, tags, imageUrl, ingredients, steps]
+      properties:
+        demonstration: { type: boolean }
+        available: { type: boolean }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        calories: { type: integer }
+        proteinG: { type: integer }
+        carbsG: { type: integer }
+        fatG: { type: integer }
+        fiberG: { type: integer }
+        prepMinutes: { type: integer }
+        difficulty: { type: string }
+        costInRupees: { type: integer }
+        vegetarian: { type: boolean }
+        tags: { type: array, items: { type: string } }
+        imageUrl: { type: string }
+        youtubeVideoId:
+          type: string
+          pattern: '^$|^[A-Za-z0-9_-]{11}$'
+          description: Optional YouTube video ID. An empty string removes the video.
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeIngredient"
+        steps: { type: array, items: { type: string } }
+    Gym:
+      type: object
+      required: [id, name, locality, city, address, distanceKm, openingHours, categories]
+      properties:
+        demonstration: { type: boolean }
+        available: { type: boolean }
+        id: { type: string }
+        name: { type: string }
+        locality: { type: string }
+        city: { type: string }
+        address: { type: string }
+        distanceKm: { type: number }
+        openingHours: { type: string }
+        categories: { type: array, items: { type: string } }
+    FoodOrderItemInput:
+      type: object
+      required: [foodSlug, quantity]
+      properties:
+        foodSlug: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1, maximum: 20 }
+    FoodOrderInput:
+      type: object
+      required: [customerName, phone, pickupLocation, pickupTime, items]
+      properties:
+        customerName: { type: string, minLength: 2, maxLength: 120 }
+        phone: { type: string, minLength: 8, maxLength: 20 }
+        email: { type: string, format: email }
+        pickupLocation: { type: string, minLength: 2, maxLength: 180 }
+        pickupTime: { type: string, minLength: 2, maxLength: 80 }
+        note: { type: string, maxLength: 500 }
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/FoodOrderItemInput"
+    OrderReceipt:
+      type: object
+      required: [id, status, submittedAt, totalInRupees, itemCount]
+      properties:
+        id: { type: string }
+        status: { type: string }
+        submittedAt: { type: string, format: date-time }
+        totalInRupees: { type: integer }
+        itemCount: { type: integer }
+    GymPartnershipInput:
+      type: object
+      required: [gymName, managerName, phone, email, location, memberCount, hasCafeteria, interests]
+      properties:
+        gymName: { type: string, minLength: 2, maxLength: 150 }
+        managerName: { type: string, minLength: 2, maxLength: 120 }
+        phone: { type: string, minLength: 8, maxLength: 20 }
+        email: { type: string, format: email }
+        location: { type: string, minLength: 2, maxLength: 180 }
+        memberCount: { type: integer, minimum: 1, maximum: 100000 }
+        hasCafeteria: { type: boolean }
+        interests: { type: array, minItems: 1, items: { type: string } }
+    ContactMessageInput:
+      type: object
+      required: [name, email, subject, message]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        email: { type: string, format: email }
+        phone: { type: string, maxLength: 20 }
+        subject: { type: string, minLength: 2, maxLength: 180 }
+        message: { type: string, minLength: 5, maxLength: 3000 }
+    EnquiryReceipt:
+      type: object
+      required: [id, submittedAt, message]
+      properties:
+        id: { type: string }
+        submittedAt: { type: string, format: date-time }
+        message: { type: string }

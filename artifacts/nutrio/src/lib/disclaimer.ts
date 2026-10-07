@@ -1,0 +1,1 @@
+export const DISCLAIMER = 'Nutrition values and recommendations are estimates for general informational purposes and are not medical advice. Consult a qualified healthcare professional or registered dietitian for medical or condition-specific nutrition needs.';

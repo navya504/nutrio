@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Nutrio"
+description = "A mobile-first healthy food and nutrition platform for discovering Indian-friendly meals and recipes, calculating estimated daily nutrition needs, finding partner gyms, and sending simple food orders and partnership enquiries."
+version = "1.0.0"
+id = "artifacts/nutrio"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18653
+
+[services.development]
+run = "pnpm --filter @workspace/nutrio run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nutrio", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/nutrio/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18653"
+BASE_PATH = "/"
